@@ -47,17 +47,26 @@ def delete_file(file_path: str):
 
 
 def download_models(model_ids: List[str], save_path: str):
+    os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "3600"
     app_settings = get_settings()
     HUGGING_FACE_TOKEN = app_settings.HUGGING_FACE_TOKEN
     login(token=HUGGING_FACE_TOKEN)
     
+    models_path = []
     for model_id in model_ids:
         model_name = model_id.split('/')[-1]
         model_save_path = os.path.join(save_path, model_name)
+        models_path.append(model_save_path)
         if not os.path.isdir(model_save_path):
             print(f"Downloading {model_name}...", end=" ")
-            snapshot_download(repo_id=model_id, use_auth_token=True, local_dir=model_save_path)
+
+            snapshot_download(repo_id=model_id,
+                              use_auth_token=True,
+                              local_dir=model_save_path,
+                              resume_download=True)
             print("Done.")
         else:
             print(f"{model_name} already exists")
+
+    return models_path
 

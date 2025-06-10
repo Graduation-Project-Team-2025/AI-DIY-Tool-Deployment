@@ -1,6 +1,5 @@
 # room_editor.py
 import torch
-from transformers import DPTForDepthEstimation, DPTFeatureExtractor
 from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
 from PIL import Image
 import numpy as np
