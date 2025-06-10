@@ -8,31 +8,24 @@ from typing import List
 def get_file_ext(filename : str):
     return filename.split('.')[-1]
 
-def save_file(file: UploadFile, upload_dir: str):
+def save_file(file: UploadFile, project_id: str, upload_dir: str):
 
     base_dir_path = os.path.dirname(os.path.dirname(__file__)) # /src/..
-    full_upload_dir = os.path.join(base_dir_path, upload_dir)
+    full_upload_dir = os.path.join(base_dir_path, upload_dir) #/src/assets/files
 
-    os.makedirs(full_upload_dir, exist_ok=True)
+    project_path = os.path.join(full_upload_dir, project_id)
+    os.makedirs(project_path, exist_ok=True)
     
     ext = get_file_ext(file.filename)
 
-    file_ids = []
-    if os.path.exists(upload_dir) :
-        file_ids = [x.split(".")[0] for x in os.listdir(upload_dir)]         
+    file_id = uuid4()
+    filename = f"{file_id}-{os.path.splitext(file.filename)[0]}.{ext}"
+    file_path = os.path.join(project_path, filename)
     
-    while True:
-        file_id = str(uuid4())
-        if file_id not in file_ids:
-            break
-
-    filename = f"{uuid4()}.{ext}"
-    file_path = os.path.join(full_upload_dir, filename)
-    print(f"DEBUG: Trying to save to: {file_path}")
     with open(file_path, "wb") as buffer:
         buffer.write(file.file.read())
 
-    return file_path, filename
+    return file_path, file_id
 
 def delete_file(file_path: str):
     try:

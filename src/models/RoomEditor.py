@@ -1,13 +1,13 @@
 # room_editor.py
 import torch
+from .BaseModel import BaseModel
 from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
 from PIL import Image
 import numpy as np
 import cv2
 import os
 
-
-class RoomEditor:
+class RoomEditor(BaseModel):
     def __init__(self):
         super().__init__()
 
@@ -17,12 +17,27 @@ class RoomEditor:
         base_dir = os.path.dirname(os.path.dirname(__file__)) #/src/
         models_weights_path =  os.path.join(base_dir, self.app_settings.MODELS_WEIGHTS_PATH)
         model_path = os.path.join(models_weights_path, model_name)
-
+        print(model_path)
         self.seg_model = UperNetForSemanticSegmentation.from_pretrained(model_path)
         self.seg_processor = AutoImageProcessor.from_pretrained(model_path)
 
         self.seg_model.eval()
+        self.id2label = self.seg_model.config.id2label
         self.custom_masks = None
+        
+    def create_seg_vis(self, segmentation):
+        color_map = np.zeros((*segmentation.shape, 3), dtype=np.uint8)
+        for key, label in self.id2label.items():
+            label = label.lower()
+            if "wall" in label:
+                color_map[segmentation == key] = [255, 179, 186]  # light pink
+            elif "ceiling" in label:
+                color_map[segmentation == key] = [255, 255, 186]  # light yellow
+            elif "floor" in label:
+                color_map[segmentation == key] = [186, 255, 201]  # light green
+
+        seg_vis = Image.fromarray(color_map)
+        return seg_vis
 
     def set_custom_segmentation_mask(self, custom_mask, image_size):
         if not isinstance(custom_mask, np.ndarray):
@@ -30,7 +45,8 @@ class RoomEditor:
         if custom_mask.ndim != 2:
             raise ValueError("Custom mask must be a 2D array.")
 
-        resized_mask = cv2.resize(custom_mask.astype(np.uint8), image_size, interpolation=cv2.INTER_NEAREST)
+        resized_mask = cv2.resize(custom_mask.astype(np.uint8),
+                                  image_size, interpolation=cv2.INTER_NEAREST)
         id2label = self.seg_model.config.id2label
         self.custom_masks = {}
         for key in id2label:
@@ -44,27 +60,19 @@ class RoomEditor:
             outputs = self.seg_model(**inputs)
 
         segmentation = torch.argmax(outputs.logits.squeeze(), dim=0).cpu().numpy()
-        segmentation = cv2.resize(segmentation.astype(np.uint8), (image_pil.width, image_pil.height), interpolation=cv2.INTER_NEAREST)
-        id2label = self.seg_model.config.id2label
+        segmentation = cv2.resize(segmentation.astype(np.uint8),
+                                  (image_pil.width, image_pil.height),
+                                  interpolation=cv2.INTER_NEAREST)
+        self.id2label = self.seg_model.config.id2label
 
-        masks = {}
-        for key in id2label:
-            label = id2label[key].lower()
+        masks = dict()
+        for key in self.id2label:
+            label = self.id2label[key].lower()
             if "wall" in label or "ceiling" in label or "floor" in label:
                 masks[label] = (segmentation == key).astype(np.uint8)
 
-        color_map = np.zeros((*segmentation.shape, 3), dtype=np.uint8)
-        for key, label in id2label.items():
-            label = label.lower()
-            if "wall" in label:
-                color_map[segmentation == key] = [255, 179, 186]  # light pink
-            elif "ceiling" in label:
-                color_map[segmentation == key] = [255, 255, 186]  # light yellow
-            elif "floor" in label:
-                color_map[segmentation == key] = [186, 255, 201]  # light green
-
-        seg_vis = Image.fromarray(color_map)
-        return masks, seg_vis
+        
+        return masks, segmentation
 
     def change_color(self, original_image, mask, target_rgb):
         if mask is None or np.sum(mask) == 0:
@@ -130,11 +138,30 @@ class RoomEditor:
         blended = cv2.add(floor_part, background)
         return cv2.cvtColor(blended, cv2.COLOR_BGR2RGB)
 
-    def preview_segmentation(self, image_pil):
-        if self.custom_masks is not None:
-            return None  # Or you could visualize custom mask manually
-        _, seg_vis = self.get_segmentation_masks(image_pil)
-        return seg_vis
+    def preview_segmentation(self, image_pil, project_id: str,file_id: str):
+        # if self.custom_masks is not None:
+        #     return None  
+        
+        masks, segmenation = self.get_segmentation_masks(image_pil)
+        seg_vis = self.create_seg_vis(segmenation)
+        
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        save_dir = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
+        project_dir = os.path.join(save_dir, project_id)
+        
+        seg_paths = dict()
+        for (label, mask) in masks.items():
+            mask_filename = f"{file_id}-mask:{label}.png"
+            mask_path = os.path.join(project_dir, mask_filename)
+            seg_paths[label] = mask_path
+            mask = mask*255
+            cv2.imwrite(mask_path, mask)
+        
+        seg_vis_filename = f"{file_id}-seg_vis.png"
+        seg_vis_path = os.path.join(project_dir, seg_vis_filename)
+        seg_vis.save(seg_vis_path)
+        
+        return seg_vis_path, seg_paths
 
     def process(self, image_pil, color_wall=None, color_ceiling=None, floor_texture=None):
         if self.custom_masks is not None:
