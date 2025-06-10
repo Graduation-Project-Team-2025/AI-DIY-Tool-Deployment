@@ -25,6 +25,8 @@ async def upload_data(request: Request, project_id : str, file : UploadFile,
                 "message": signal
             }
         )
+
+    file_path, filename = diy_controller.cache_img(file=file)
     return JSONResponse(
         content = {
             "is_valid": True,

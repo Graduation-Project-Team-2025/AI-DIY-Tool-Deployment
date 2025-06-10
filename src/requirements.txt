@@ -2,3 +2,9 @@ fastapi==0.115.12
 pydantic-settings==2.9.1
 uvicorn==0.34.2
 python-multipart==0.0.20
+huggingface_hub==0.32.4
+pillow==11.2.1
+opencv-python==4.11.0.86
+transformers==4.52.4
+torch==2.7.1
+numpy==2.2

@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     FILE_ALLOWED_TYPES: List[str]
     FILE_ALLOWED_SIZE: int
     MODELS_WEIGHTS_PATH: str
+    UPLOAD_FILES_PATH: str
+    SEGMENTATION_MODEL_ID: str
     
     model_config = SettingsConfigDict(env_file=".env")
 
