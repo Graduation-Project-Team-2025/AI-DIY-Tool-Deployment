@@ -143,7 +143,7 @@ async def edit_image(
     project_id: str,
     file_id: str,
     segment_id: str,
-    texture_id: str
+    texture_img: UploadFile
 ):
     data = await request.json()
         
@@ -159,16 +159,20 @@ async def edit_image(
             content={"error": "segment_id is required"}
         )
         
-    if "texture_id" not in data:
+    if "texture_img" not in data:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "texture_id is required"}
+            content={"error": "texture_img is required"}
         )
     
     diy_controller = DIYController()
     img = diy_controller.read_img(project_id, data["file_id"])
     msk = diy_controller.read_msk(project_id, data['file_id'], data['segment_id'])
 
-    
+    output_img = diy_controller.replace_floor(img, msk, )
+    output_img_path, output_img_name = diy_controller.cache_version(output_img,
+                                                                    project_id, data["file_id"])
 
-    return 
+    return {
+            "preview_segments_img": FileResponse(output_img_path),
+        }
