@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     MODELS_WEIGHTS_PATH: str
     UPLOAD_FILES_PATH: str
     SEGMENTATION_MODEL_ID: str
+    WALL_COLOR: List[int]
+    FLOOR_COLOR: List[int]
+    CEILING_COLOR: List[int]
     
     model_config = SettingsConfigDict(env_file=".env")
 

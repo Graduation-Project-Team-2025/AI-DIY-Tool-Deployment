@@ -1,4 +1,3 @@
-# room_editor.py
 import torch
 from .BaseModel import BaseModel
 from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
@@ -30,11 +29,11 @@ class RoomEditor(BaseModel):
         for key, label in self.id2label.items():
             label = label.lower()
             if "wall" in label:
-                color_map[segmentation == key] = [255, 179, 186]  # light pink
+                color_map[segmentation == key] = self.app_settings.WALL_COLOR  # light pink
             elif "ceiling" in label:
-                color_map[segmentation == key] = [255, 255, 186]  # light yellow
+                color_map[segmentation == key] = self.app_settings.CEILING_COLOR # light yellow
             elif "floor" in label:
-                color_map[segmentation == key] = [186, 255, 201]  # light green
+                color_map[segmentation == key] = self.app_settings.FLOOR_COLOR # light green
 
         seg_vis = Image.fromarray(color_map)
         return seg_vis
@@ -150,10 +149,18 @@ class RoomEditor(BaseModel):
         project_dir = os.path.join(save_dir, project_id)
         
         seg_paths = dict()
+        seg_colors = dict()
+        
         for (label, mask) in masks.items():
-            mask_filename = f"{file_id}-mask:{label}.png"
+            mask_filename = f"{file_id}-MSK:{label}.png"
             mask_path = os.path.join(project_dir, mask_filename)
             seg_paths[label] = mask_path
+            if "wall" in label:
+                seg_colors[label] = self.app_settings.WALL_COLOR  # light pink
+            elif "ceiling" in label:
+                seg_colors[label] = self.app_settings.CEILING_COLOR # light yellow
+            elif "floor" in label:
+                seg_colors[label] = self.app_settings.FLOOR_COLOR # light green
             mask = mask*255
             cv2.imwrite(mask_path, mask)
         
@@ -161,7 +168,7 @@ class RoomEditor(BaseModel):
         seg_vis_path = os.path.join(project_dir, seg_vis_filename)
         seg_vis.save(seg_vis_path)
         
-        return seg_vis_path, seg_paths
+        return seg_vis_path, seg_paths, seg_colors
 
     def process(self, image_pil, color_wall=None, color_ceiling=None, floor_texture=None):
         if self.custom_masks is not None:

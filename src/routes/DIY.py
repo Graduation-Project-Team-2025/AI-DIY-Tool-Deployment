@@ -1,9 +1,13 @@
 import json
-from fastapi import FastAPI, APIRouter, Depends, UploadFile, status, Request, Form
+from fastapi import APIRouter, Depends, UploadFile, status, Request, Form
 from fastapi.responses import JSONResponse, FileResponse
 from helpers import get_settings, Settings
 from models import RoomEditor
 from controllers import DIYController
+from typing import List
+from io import BytesIO
+from pydantic import BaseModel
+
 
 #routes ==>> Flow
 
@@ -48,66 +52,123 @@ async def segment_image(
     request: Request,
     project_id: str,
 ):
-    # try:
-    # 1. Parse JSON data
-    data = await request.json()
+    try:
+        data = await request.json()
+        
+        if "file_id" not in data:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"error": "file_id is required"}
+            )
+        
+        img = DIYController().read_img(project_id, data["file_id"])
+        
+        editor = RoomEditor()
+        preview_path, masks_path, seg_colors = editor.preview_segmentation(img, project_id, data["file_id"])
+        
+        if preview_path is None:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"error": "Custom mask in use or segmentation failed"}
+            )
+        
+        return {
+        "preview_segments_img": FileResponse(preview_path),
+        "segments_ids": list(seg_colors.keys()),
+        "segments_colors": list(seg_colors.values())
+    }
+        
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "Invalid JSON format"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": f"Processing error: {str(e)}"}
+        )
+
+class SegmentRequest(BaseModel):
+    file_id: str
+    segment_id: str
+    color: list[int]
     
-    # 2. Validate required fields
+@diy_router.post('/{project_id}/change-color')
+async def edit_image(
+    request: Request,
+    data: SegmentRequest,
+    project_id: str
+):
+    data = await request.json()
+        
     if "file_id" not in data:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"error": "file_id is required"}
         )
-    
-    # 3. Get image using your controller
-    img = DIYController().read_img(project_id, data["file_id"])
-    
-    # 4. Process image
-    editor = RoomEditor()
-    preview_path, masks_path = editor.preview_segmentation(img, project_id, data["file_id"])
-    
-    if preview_path is None:
+        
+    if "segment_id" not in data:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "Custom mask in use or segmentation failed"}
+            content={"error": "segment_id is required"}
+        )
+        
+    if "color" not in data:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "color is required"}
         )
     
-    # 5. Return preview image
-    return FileResponse(preview_path)
+    diy_controller = DIYController()
+    img = diy_controller.read_img(project_id, data["file_id"])
+    msk = diy_controller.read_msk(project_id, data['file_id'], data['segment_id'])
+    
+    
+    editor = RoomEditor()
+
+
+    output_img = editor.change_color(img, msk, data["color"])
+    output_img_path, output_img_name = diy_controller.cache_version(output_img,
+                                                                    project_id, data["file_id"])
+    
+    return {
+            "preview_segments_img": FileResponse(output_img_path),
+        }
+
+
+@diy_router.post('/{project_id}/change-texture')
+async def edit_image(
+    request: Request,
+    project_id: str,
+    file_id: str,
+    segment_id: str,
+    texture_id: str
+):
+    data = await request.json()
         
-    # except json.JSONDecodeError:
-    #     return JSONResponse(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         content={"error": "Invalid JSON format"}
-    #     )
-    # except Exception as e:
-    #     return JSONResponse(
-    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         content={"error": f"Processing error: {str(e)}"}
-    #     )
+    if "file_id" not in data:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "file_id is required"}
+        )
+        
+    if "segment_id" not in data:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "segment_id is required"}
+        )
+        
+    if "texture_id" not in data:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "texture_id is required"}
+        )
+    
+    diy_controller = DIYController()
+    img = diy_controller.read_img(project_id, data["file_id"])
+    msk = diy_controller.read_msk(project_id, data['file_id'], data['segment_id'])
 
-# @diy_router.post('/{project_id}/edit')
-# async def edit_image():
-#     image_file = request.files.get('image')
-#     texture_file = request.files.get('floor_texture')
-#     color_wall = request.form.get('color_wall')  # e.g., "255,0,0"
-#     color_ceiling = request.form.get('color_ceiling')  # e.g., "0,255,0"
+    
 
-#     if not image_file:
-#         return jsonify({"error": "Image file is required"}), 400
-
-#     image = Image.open(image_file).convert("RGB")
-#     wall_rgb = tuple(map(int, color_wall.split(","))) if color_wall else None
-#     ceiling_rgb = tuple(map(int, color_ceiling.split(","))) if color_ceiling else None
-
-#     texture_path = None
-#     if texture_file:
-#         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-#         texture_file.save(tmp.name)
-#         texture_path = tmp.name
-
-#     output_img, _ = editor.process(image, color_wall=wall_rgb, color_ceiling=ceiling_rgb, floor_texture=texture_path)
-#     output_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-#     output_img.save(output_path)
-
-#     return send_file(output_path, mimetype='image/png')
+    return 
