@@ -31,6 +31,25 @@ def save_file(file: UploadFile, project_id: str, upload_dir: str):
 
     return file_path, file_id
 
+def save_temp(file: UploadFile, project_id: str, upload_dir: str):
+
+    base_dir_path = os.path.dirname(os.path.dirname(__file__)) # /src/..
+    full_upload_dir = os.path.join(base_dir_path, upload_dir) #/src/assets/files
+
+    project_path = os.path.join(full_upload_dir, project_id)
+    os.makedirs(project_path, exist_ok=True)
+
+    ext = get_file_ext(file.filename)
+
+    file_id = uuid4()
+    filename = f"{file_id}-TEMP.{ext}"
+    file_path = os.path.join(project_path, filename)
+    
+    with open(file_path, "wb") as buffer:
+        buffer.write(file.file.read())
+
+    return file_path, file_id
+
 def delete_file(file_path: str):
     try:
         if os.path.exists(file_path):

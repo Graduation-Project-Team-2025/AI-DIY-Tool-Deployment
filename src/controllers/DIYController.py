@@ -4,7 +4,7 @@ from .BaseController import BaseController
 from fastapi import UploadFile
 from models import (ResponseEnum
                     )
-from utils import save_file, save_version
+from utils import save_file, save_version, save_temp, delete_file
 import cv2
 
 
@@ -87,5 +87,15 @@ class DIYController(BaseController):
         
         
         return msk
+    
+    def change_texture(self, project_id, editor, img, msk, texture_img):
+        texture_path, _ = save_temp(texture_img, project_id, self.app_settings.UPLOAD_FILES_PATH)
+        texture = cv2.imread(texture_path)
+        
+        output_img = editor.replace_floor(img, msk, texture)
+        delete_file(texture_path)
+        
+        return output_img
+        
     
     

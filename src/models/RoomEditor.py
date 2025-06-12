@@ -104,7 +104,7 @@ class RoomEditor(BaseModel):
         result = cv2.cvtColor(hsv_new, cv2.COLOR_HSV2RGB)
         return result
 
-    def replace_floor(self, image_pil, floor_mask, texture_path):
+    def replace_floor(self, image_pil, floor_mask, texture):
         if floor_mask is None or np.sum(floor_mask) == 0:
             return np.array(image_pil)
 
@@ -126,7 +126,9 @@ class RoomEditor(BaseModel):
             approx = np.array([[[x, y]], [[x+w, y]], [[x+w, y+h]], [[x, y+h]]])
 
         dst_pts = np.array([pt[0] for pt in approx], dtype=np.float32)
-        texture = cv2.imread(texture_path)
+        
+        texture = np.array(texture)
+        
         h_tex, w_tex = texture.shape[:2]
         src_pts = np.array([[0, 0], [w_tex-1, 0], [w_tex-1, h_tex-1], [0, h_tex-1]], dtype=np.float32)
         H, _ = cv2.findHomography(src_pts, dst_pts)

@@ -95,7 +95,7 @@ class SegmentRequest(BaseModel):
     color: list[int]
     
 @diy_router.post('/{project_id}/change-color')
-async def edit_image(
+async def chage_segment_color(
     request: Request,
     data: SegmentRequest,
     project_id: str
@@ -138,40 +138,27 @@ async def edit_image(
 
 
 @diy_router.post('/{project_id}/change-texture')
-async def edit_image(
+async def change_segment_texture(
     request: Request,
     project_id: str,
-    file_id: str,
-    segment_id: str,
-    texture_img: UploadFile
+    texture_img: UploadFile,
+    file_id: str = Form(...),
+    segment_id: str = Form(...),
+    
 ):
-    data = await request.json()
-        
-    if "file_id" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "file_id is required"}
-        )
-        
-    if "segment_id" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "segment_id is required"}
-        )
-        
-    if "texture_img" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "texture_img is required"}
-        )
     
     diy_controller = DIYController()
-    img = diy_controller.read_img(project_id, data["file_id"])
-    msk = diy_controller.read_msk(project_id, data['file_id'], data['segment_id'])
+    img = diy_controller.read_img(project_id, file_id)
+    msk = diy_controller.read_msk(project_id, file_id, segment_id)
 
-    output_img = diy_controller.replace_floor(img, msk, )
+    editor = RoomEditor()
+    
+    
+    output_img =  diy_controller.change_texture(project_id, editor, img, msk, texture_img)
+    
+    
     output_img_path, output_img_name = diy_controller.cache_version(output_img,
-                                                                    project_id, data["file_id"])
+                                                                    project_id, file_id)
 
     return {
             "preview_segments_img": FileResponse(output_img_path),
