@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     APP_VERSION: str
     HUGGING_FACE_TOKEN: str
     GITHUB_TOKEN: str
+    DOCKERHUB_TOKEN: str
     FILE_ALLOWED_TYPES: List[str]
     FILE_ALLOWED_SIZE: int
     MODELS_WEIGHTS_PATH: str
