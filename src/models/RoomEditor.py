@@ -137,6 +137,7 @@ class RoomEditor(BaseModel):
         floor_part = cv2.bitwise_and(warped_texture, warped_texture, mask=binary_mask)
         background = cv2.bitwise_and(image_cv, image_cv, mask=inverse_mask)
         blended = cv2.add(floor_part, background)
+        
         return cv2.cvtColor(blended, cv2.COLOR_BGR2RGB)
 
     def preview_segmentation(self, image_pil, project_id: str,file_id: str):
