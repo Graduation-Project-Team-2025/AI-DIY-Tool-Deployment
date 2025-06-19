@@ -1,26 +1,46 @@
-import torch
-from .BaseModel import BaseModel
-from transformers import UperNetForSemanticSegmentation, AutoImageProcessor
-from PIL import Image
-import numpy as np
-import cv2
 import os
+import cv2
+import torch
+import numpy as np
+from PIL import Image
+from .BaseModel import BaseModel
+from transformers import (
+    UperNetForSemanticSegmentation,
+    AutoImageProcessor,
+    DPTForDepthEstimation,
+    DPTImageProcessor
+)
+
 
 class RoomEditor(BaseModel):
     def __init__(self):
         super().__init__()
 
-        model_id = self.app_settings.SEGMENTATION_MODEL_ID
-        model_name = model_id.split("/")[-1]
+        seg_model_id = self.app_settings.SEGMENTATION_MODEL_ID
+        seg_model_name = seg_model_id.split("/")[-1]
+        
+        depth_est_model_id = self.app_settings.DEPTH_ESTIMATION_MODEL_ID
+        depth_est_model_name = depth_est_model_id.split("/")[-1]
 
         base_dir = os.path.dirname(os.path.dirname(__file__)) #/src/
         models_weights_path =  os.path.join(base_dir, self.app_settings.MODELS_WEIGHTS_PATH)
-        model_path = os.path.join(models_weights_path, model_name)
-        print(model_path)
-        self.seg_model = UperNetForSemanticSegmentation.from_pretrained(model_path)
-        self.seg_processor = AutoImageProcessor.from_pretrained(model_path)
+        
+        seg_model_path = os.path.join(models_weights_path, seg_model_name)
+        depth_est_model_path = os.path.join(models_weights_path, depth_est_model_name)
+        
+        self.seg_model = UperNetForSemanticSegmentation.from_pretrained(seg_model_path)
+        self.seg_processor = AutoImageProcessor.from_pretrained(seg_model_path, use_fast=False)
+        
+        self.depth_est_model = DPTForDepthEstimation.from_pretrained(depth_est_model_path)
+        self.depth_est_preprocessor = DPTImageProcessor.from_pretrained(depth_est_model_path)
 
         self.seg_model.eval()
+        self.depth_est_model.eval()
+        
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.seg_model.to(self.device)
+        self.depth_est_model.to(self.device)
+
         self.id2label = self.seg_model.config.id2label
         self.custom_masks = None
         
@@ -86,12 +106,12 @@ class RoomEditor(BaseModel):
         H, S, V = cv2.split(hsv)
         target_color_bgr = np.uint8([[target_bgr]])
         target_hsv = cv2.cvtColor(target_color_bgr, cv2.COLOR_BGR2HSV)[0][0]
-        h_new, s_new = target_hsv[0], target_hsv[1]
+        h_new, s_new, v_new = target_hsv
 
         H = H.astype(np.float32)
         S = S.astype(np.float32)
         V = V.astype(np.float32)
-        V_new = 0.6 * V + 0.4 * V
+        V_new = 0.5 * V + 0.5 * v_new
         H = H * (1 - mask) + h_new * mask
         S = S * (1 - mask) + s_new * mask
         V = V * (1 - mask) + V_new * mask
@@ -103,53 +123,73 @@ class RoomEditor(BaseModel):
         ])
         result = cv2.cvtColor(hsv_new, cv2.COLOR_HSV2RGB)
         return result
+    def get_depth_mask(self, image):
+        depth_inputs = self.depth_est_preprocessor(images=image, return_tensors="pt")
+        depth_inputs.to(self.device)
+        with torch.no_grad():
+            depth_outputs = self.depth_est_model(**depth_inputs)
 
-    def replace_floor(self, image_pil, floor_mask, texture):
-        if floor_mask is None or np.sum(floor_mask) == 0:
-            return np.array(image_pil)
-
-        image_np = np.array(image_pil)
-        image_cv = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
-        mask_resized = cv2.resize(floor_mask, image_pil.size)
-        binary_mask = (mask_resized * 255).astype(np.uint8)
-
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return image_np
-
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        floor_contour = contours[0]
-        epsilon = 0.02 * cv2.arcLength(floor_contour, True)
-        approx = cv2.approxPolyDP(floor_contour, epsilon, True)
-        if len(approx) != 4:
-            x, y, w, h = cv2.boundingRect(floor_contour)
-            approx = np.array([[[x, y]], [[x+w, y]], [[x+w, y+h]], [[x, y+h]]])
-
-        dst_pts = np.array([pt[0] for pt in approx], dtype=np.float32)
+        depth = depth_outputs.predicted_depth.squeeze().cpu().numpy()
+        depth_resized = cv2.resize(depth, image.size)
+        depth_resized = (depth_resized/depth_resized.max())*255
+        depth_resized = np.uint8(depth_resized)
         
-        texture = np.array(texture)
+        return depth_resized
         
-        h_tex, w_tex = texture.shape[:2]
-        src_pts = np.array([[0, 0], [w_tex-1, 0], [w_tex-1, h_tex-1], [0, h_tex-1]], dtype=np.float32)
-        H, _ = cv2.findHomography(src_pts, dst_pts)
-        warped_texture = cv2.warpPerspective(texture, H, (image_np.shape[1], image_np.shape[0]))
-        inverse_mask = cv2.bitwise_not(binary_mask)
-        floor_part = cv2.bitwise_and(warped_texture, warped_texture, mask=binary_mask)
-        background = cv2.bitwise_and(image_cv, image_cv, mask=inverse_mask)
-        blended = cv2.add(floor_part, background)
         
-        return cv2.cvtColor(blended, cv2.COLOR_BGR2RGB)
+        
+    def warp_texture_with_depth(self, image, texture, depth_map, mask):
+        image = np.uint8(image)
+        
+        mask = np.uint8(mask/mask.max())
+        depth_map = depth_map*mask
+        
+        x, y, w, h = cv2.boundingRect(mask)
+        image_crop = image[y:y+h, x:x+w]
+        depth_crop = depth_map[y:y+h, x:x+w]
+        mask_crop = mask[y:y+h, x:x+w]
+        texture = cv2.resize(texture, (w, h))
+
+        x_grid, y_grid = np.meshgrid(np.arange(w), np.arange(h))
+        z_normalized = depth_crop / (depth_crop.max() + 1e-6)  
+        x_warped = x_grid * (0.5 + 0.5 * z_normalized)
+        y_warped = y_grid * (0.5 + 0.5 * z_normalized)
+
+        x_warped = np.clip(x_warped, 0, w-1).astype(np.float32)
+        y_warped = np.clip(y_warped, 0, h-1).astype(np.float32)
+
+        warped_texture = cv2.remap(
+            texture,
+            x_warped,
+            y_warped,
+            cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REFLECT
+        )
+
+        result = image.copy()
+        result_crop = result[y:y+h, x:x+w]
+
+        mask_3ch = np.stack([mask_crop]*3, axis=-1)
+
+        result_crop[:] = warped_texture * mask_3ch + image_crop * (1 - mask_3ch)
+
+        return result
+    
 
     def preview_segmentation(self, image_pil, project_id: str,file_id: str):
-        # if self.custom_masks is not None:
-        #     return None  
         
         masks, segmenation = self.get_segmentation_masks(image_pil)
         seg_vis = self.create_seg_vis(segmenation)
         
+        depth = self.get_depth_mask(image_pil)
+        
         base_dir = os.path.dirname(os.path.dirname(__file__))
         save_dir = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
         project_dir = os.path.join(save_dir, project_id)
+        
+        depth_filename = f"{file_id}-DPTH.png"
+        depth_path = os.path.join(project_dir, depth_filename)
+        cv2.imwrite(depth_path, depth)
         
         seg_paths = dict()
         seg_colors = dict()

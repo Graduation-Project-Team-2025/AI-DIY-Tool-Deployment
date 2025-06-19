@@ -6,19 +6,6 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libavif-dev pkg-config \
     libjpeg-dev \
-    gcc unzip zip \
-    python3-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    libffi-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libavif-dev pkg-config \
-    libjpeg-dev \
     libgl1 \
     gcc unzip zip \
     python3-dev \
@@ -31,14 +18,13 @@ RUN apt-get update && apt-get install -y \
 COPY src/requirements.txt .
 
 ARG HUGGINGFACE_TOKEN
-
 ENV HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
 
 RUN uv pip install --system --no-cache-dir huggingface_hub transformers
 
-RUN python -c "from huggingface_hub import login; HUGGING_FACE_TOKEN = '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'; login(token=HUGGING_FACE_TOKEN)"
+RUN python -c "from huggingface_hub import login; import os; login(token=os.environ['HUGGINGFACE_TOKEN'])"
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='openmmlab/upernet-convnext-small', use_auth_token=True, local_dir='./assets/models-weights/upernet-convnext-small')"
-
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Intel/dpt-hybrid-midas', use_auth_token=True, local_dir='./assets/models-weights/dpt-hybrid-midas')"
 
 RUN uv pip install -r requirements.txt --system
 

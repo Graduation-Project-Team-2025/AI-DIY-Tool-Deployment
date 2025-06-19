@@ -133,7 +133,7 @@ async def chage_segment_color(
                                                                     project_id, data["file_id"])
     
     return {
-            "preview_segments_img": FileResponse(output_img_path),
+            "Image": FileResponse(output_img_path),
         }
 
 
@@ -150,16 +150,29 @@ async def change_segment_texture(
     diy_controller = DIYController()
     img = diy_controller.read_img(project_id, file_id)
     msk = diy_controller.read_msk(project_id, file_id, segment_id)
-
+    
     editor = RoomEditor()
     
     
-    output_img =  diy_controller.change_texture(project_id, editor, img, msk, texture_img)
+    output_img =  diy_controller.change_texture(project_id, file_id, editor, img, msk, texture_img)
     
     
     output_img_path, output_img_name = diy_controller.cache_version(output_img,
                                                                     project_id, file_id)
 
     return {
-            "preview_segments_img": FileResponse(output_img_path),
+            "Image": FileResponse(output_img_path),
         }
+    
+    
+@diy_router.post("/{project_id}/save")    
+def save_project(project_id: str):
+    
+    project = DIYController().read_project(project_id)
+    return {
+        "Project": project
+    }
+
+@diy_router.post("/{project_id}/open")    
+def open_project():
+    return

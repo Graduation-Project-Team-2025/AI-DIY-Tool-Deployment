@@ -1,10 +1,13 @@
 import os
+import re
 from PIL import Image
+import base64
+import shutil
 from .BaseController import BaseController
 from fastapi import UploadFile
 from models import (ResponseEnum
                     )
-from utils import save_file, save_version, save_temp, delete_file
+from utils import save_file, save_temp, delete_file
 import cv2
 
 
@@ -30,9 +33,57 @@ class DIYController(BaseController):
         return file_path, filename 
     
     def cache_version(self, file, project_id: str, file_id: str):
-        file_path, filename = save_version(file, project_id, file_id,
+        file_path, filename = save_file(file, project_id, file_id = file_id,
                                             upload_dir=self.app_settings.UPLOAD_FILES_PATH)
         return file_path, filename 
+    
+    def read_project(self, project_id: str):
+        base_dir = os.path.dirname(os.path.dirname(__file__))  # /src/
+        upload_path = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
+        project_path = os.path.join(upload_path, project_id)
+
+        filenames = os.listdir(project_path)
+        pattern_img = r"^(?P<file_id>.+)-IMG-ORG\.(?:png|jpg|jpeg)$"
+
+        file_ids = []
+        for fname in filenames:
+            match = re.match(pattern_img, fname, re.IGNORECASE)
+            if match:
+                file_ids.append(match.group("file_id"))
+
+        project = dict()
+        for file_id in file_ids:
+            image_content = None
+            masks_content = dict()
+            depth_content = None
+
+            for filename in filenames:
+                full_path = os.path.join(project_path, filename)
+                if file_id in filename and "IMG-ORG" in filename:
+                    with open(full_path, "rb") as f:
+                        image_content = base64.b64encode(f.read()).decode('utf-8')
+
+                if file_id in filename and "MSK" in filename:
+                    match = re.match(rf"^{file_id}-MSK:(?P<label>.+)\.png$", filename)
+                    if match:
+                        label = match.group("label")
+                        with open(full_path, "rb") as f:
+                            masks_content[label] = base64.b64encode(f.read()).decode('utf-8')
+
+                if file_id in filename and "DPTH" in filename:
+                    with open(full_path, "rb") as f:
+                        depth_content = base64.b64encode(f.read()).decode('utf-8')
+
+            file = {
+                "Image": image_content,
+                "Masks": masks_content,
+                "Depth": depth_content
+            }
+            project[file_id] = file
+
+        # shutil.rmtree(project_path)
+
+        return project
     
    
 
@@ -88,11 +139,21 @@ class DIYController(BaseController):
         
         return msk
     
-    def change_texture(self, project_id, editor, img, msk, texture_img):
+    def change_texture(self, project_id, file_id, editor, img, msk, texture_img):
         texture_path, _ = save_temp(texture_img, project_id, self.app_settings.UPLOAD_FILES_PATH)
         texture = cv2.imread(texture_path)
+        texture = cv2.cvtColor(texture, cv2.COLOR_BGR2RGB)
         
-        output_img = editor.replace_floor(img, msk, texture)
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        save_dir = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
+        project_dir = os.path.join(save_dir, project_id)
+        
+        depth_filename = f"{file_id}-DPTH.png"
+        depth_path = os.path.join(project_dir, depth_filename)
+        
+        depth = cv2.imread(depth_path, cv2.IMREAD_GRAYSCALE)
+        
+        output_img = editor.warp_texture_with_depth(img, texture, depth, msk)
         delete_file(texture_path)
         
         return output_img

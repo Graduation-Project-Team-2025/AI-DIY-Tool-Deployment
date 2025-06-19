@@ -1,6 +1,7 @@
 import os
 import re
 import cv2
+import numpy as np
 from PIL import Image
 from uuid import uuid4
 from typing import List
@@ -12,7 +13,7 @@ from huggingface_hub import login, snapshot_download
 def get_file_ext(filename : str):
     return filename.split('.')[-1]
 
-def save_file(file: UploadFile, project_id: str, upload_dir: str):
+def save_file(file: UploadFile, project_id: str, upload_dir: str, file_id: str = None):
 
     base_dir_path = os.path.dirname(os.path.dirname(__file__)) # /src/..
     full_upload_dir = os.path.join(base_dir_path, upload_dir) #/src/assets/files
@@ -20,16 +21,26 @@ def save_file(file: UploadFile, project_id: str, upload_dir: str):
     project_path = os.path.join(full_upload_dir, project_id)
     os.makedirs(project_path, exist_ok=True)
 
-    ext = get_file_ext(file.filename)
+    ext = ".png"
+    if file_id is None:
+        ext = get_file_ext(file.filename)
+        file_id = uuid4()
+        
+        filename = f"{file_id}-IMG-ORG.{ext}"
+        file_path = os.path.join(project_path, filename)
+        
+        with open(file_path, "wb") as buffer:
+            buffer.write(file.file.read())
 
-    file_id = uuid4()
-    filename = f"{file_id}-IMG-ORG.{ext}"
-    file_path = os.path.join(project_path, filename)
-    
-    with open(file_path, "wb") as buffer:
-        buffer.write(file.file.read())
-
-    return file_path, file_id
+        return file_path, file_id
+    else:
+        ext = "png"
+        filename = f"{file_id}-IMG-ORG.{ext}"
+        file_path = os.path.join(project_path, filename)
+        file = cv2.cvtColor(file, cv2.COLOR_BGR2RGB)
+        cv2.imwrite(file_path, np.array(file))
+        
+        return file_path, file_id
 
 def save_temp(file: UploadFile, project_id: str, upload_dir: str):
 
