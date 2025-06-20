@@ -40,7 +40,7 @@ def save_file(file: UploadFile, project_id: str, upload_dir: str, file_id: str =
         file = cv2.cvtColor(file, cv2.COLOR_BGR2RGB)
         cv2.imwrite(file_path, np.array(file))
         
-        return file_path, file_id
+        return filename, file_id
 
 def save_temp(file: UploadFile, project_id: str, upload_dir: str):
 
@@ -123,4 +123,7 @@ def save_version(file, project_id: str, file_id: str, upload_dir:str):
     cv2.imwrite(file_path, bgr_image)
         
     return file_path, filename
+
+
+
     

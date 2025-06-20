@@ -1,5 +1,6 @@
 import os
 import re
+import cv2
 from PIL import Image
 import base64
 import shutil
@@ -7,8 +8,11 @@ from .BaseController import BaseController
 from fastapi import UploadFile
 from models import (ResponseEnum
                     )
-from utils import save_file, save_temp, delete_file
-import cv2
+from utils import (
+    save_file, 
+    save_temp, 
+    delete_file,
+)
 
 
 # Controllers ==>> Logic
@@ -17,31 +21,109 @@ class DIYController(BaseController):
     def __init__(self):
         super().__init__()
         self.scale_size = 1048576 #from MB to Bytes
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        self.upload_path = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
+        
 
     def validate_uploaded_file(self, file: UploadFile):
         if file.content_type not in self.app_settings.FILE_ALLOWED_TYPES:
-            return False, ResponseEnum.FILE_TYPE_NOT_SUPPORTED_ENG.value, ResponseEnum.FILE_TYPE_NOT_SUPPORTED_AR.value
+            return (
+                False,
+                ResponseEnum.FILE_TYPE_NOT_SUPPORTED_ENG.value,
+                ResponseEnum.FILE_TYPE_NOT_SUPPORTED_AR.value
+            )
 
         if file.size > self.app_settings.FILE_ALLOWED_SIZE * self.scale_size:
-            return False, ResponseEnum.FILE_SIZE_EXCEEDED_ENG.value, ResponseEnum.FILE_SIZE_EXCEEDED_AR.value
+            return (
+                False,
+                ResponseEnum.FILE_SIZE_EXCEEDED_ENG.value,
+                ResponseEnum.FILE_SIZE_EXCEEDED_AR.value
+            )
         
-        return True, ResponseEnum.FILE_UPLOADED_SUCCESSFULLY_ENG.value,  ResponseEnum.FILE_UPLOADED_SUCCESSFULLY_AR.value
+        return (
+            True,
+            ResponseEnum.FILE_UPLOADED_SUCCESSFULLY_ENG.value,
+            ResponseEnum.FILE_UPLOADED_SUCCESSFULLY_AR.value
+        )
+        
+
+    def validate_project_id(self, project_id):
+        project_path = os.path.join(self.upload_path, project_id)
+        
+        if os.path.exists(project_path):
+            return (
+                True,
+                ResponseEnum.PROJECT_FOUND_SUCCESSFULLY_ENG.value,
+                ResponseEnum.PROJECT_FOUND_SUCCESSFULLY_AR.value
+            )
+        else:
+            return (
+                False,
+                ResponseEnum.PROJECT_DOES_NOT_EXIST_ENG.value,
+                ResponseEnum.PROJECT_DOES_NOT_EXIST_AR.value
+            )
+        
+        
+    def validate_file_id(self, file_id, project_id):
+        project_path = os.path.join(self.upload_path, project_id)
+        filenames = os.listdir(project_path)
+        
+        pattern_img = r"^(?P<file_id>.+)-IMG-ORG\.(?:png|jpg|jpeg)$"
+        file_ids = []
+        for fname in filenames:
+            match = re.match(pattern_img, fname, re.IGNORECASE)
+            if match:
+                file_ids.append(match.group("file_id"))
+        if file_id in file_ids:
+            return (
+                True,
+                ResponseEnum.FILE_FOUND_SUCCESSFULLY_ENG.value,
+                ResponseEnum.FILE_FOUND_SUCCESSFULLY_AR.value
+            )
+        else:
+            return (
+                False,
+                ResponseEnum.FILE_DOES_NOT_EXIST_ENG.value,
+                ResponseEnum.FILE_DOES_NOT_EXIST_AR.value
+            )
+    
+    
+    def file_exists(self, project_id, filename):
+        project_path = os.path.join(self.upload_path, project_id)
+        file_path = os.path.join(project_path, filename)
+        if os.path.exists(file_path):
+            return (
+                True, 
+                ResponseEnum.FILE_FOUND_SUCCESSFULLY_ENG.value, 
+                ResponseEnum.FILE_FOUND_SUCCESSFULLY_AR.value,
+                file_path
+            )
+        else:
+            return (
+                False,
+                ResponseEnum.FILE_DOES_NOT_EXIST_ENG.value,
+                ResponseEnum.FILE_DOES_NOT_EXIST_AR.value,
+                ""
+            )
+
 
     def cache_img(self, file: UploadFile, project_id: str):
-        file_path, filename = save_file(file, project_id=project_id,
+        filename , file_id = save_file(file, project_id=project_id,
                                         upload_dir=self.app_settings.UPLOAD_FILES_PATH)
-        return file_path, filename 
+        return filename , file_id 
+    
     
     def cache_version(self, file, project_id: str, file_id: str):
-        file_path, filename = save_file(file, project_id, file_id = file_id,
+        filename , file_id  = save_file(file, project_id, file_id = file_id,
                                             upload_dir=self.app_settings.UPLOAD_FILES_PATH)
-        return file_path, filename 
+        return filename , file_id 
+    
     
     def read_project(self, project_id: str):
-        base_dir = os.path.dirname(os.path.dirname(__file__))  # /src/
-        upload_path = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
-        project_path = os.path.join(upload_path, project_id)
-
+        project_path = os.path.join(self.upload_path, project_id)
+        
+        if not os.path.exists(project_path):
+            return False, ResponseEnum.FILE_DOES_NOT_EXIST_ENG.value
         filenames = os.listdir(project_path)
         pattern_img = r"^(?P<file_id>.+)-IMG-ORG\.(?:png|jpg|jpeg)$"
 
@@ -52,6 +134,7 @@ class DIYController(BaseController):
                 file_ids.append(match.group("file_id"))
 
         project = dict()
+        i = 0
         for file_id in file_ids:
             image_content = None
             masks_content = dict()
@@ -74,23 +157,28 @@ class DIYController(BaseController):
                     with open(full_path, "rb") as f:
                         depth_content = base64.b64encode(f.read()).decode('utf-8')
 
-            file = {
+            project[f"file{i}_id"] = file_id
+            project[f"files{i}"] = {
                 "Image": image_content,
                 "Masks": masks_content,
                 "Depth": depth_content
             }
-            project[file_id] = file
+            i += 1
 
-        # shutil.rmtree(project_path)
+        shutil.rmtree(project_path)
 
         return project
     
-   
+    
+    def delete_project(self, project_id):
+        project_path = os.path.join(self.upload_path, project_id)
+        
+        shutil.rmtree(project_path)
+        return
+        
 
     def read_img(self, project_id: str, file_id: str):
-        base_dir = os.path.dirname(os.path.dirname(__file__))  # /src/
-        upload_path = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH)
-        project_path = os.path.join(upload_path, project_id)
+        project_path = os.path.join(self.upload_path, project_id)
         
         matching_files = [
             x for x in os.listdir(project_path)
@@ -124,10 +212,9 @@ class DIYController(BaseController):
         image = Image.open(img_path).convert("RGB")
         return image
     
+    
     def read_msk(self, project_id: str, file_id: str, msk_id: str):
-        base_dir = os.path.dirname(os.path.dirname(__file__)) #/src/
-        upload_path = os.path.join(base_dir, self.app_settings.UPLOAD_FILES_PATH) #/src/assets/files
-        project_path = os.path.join(upload_path, project_id) #/src/assets/files
+        project_path = os.path.join(self.upload_path, project_id) 
         
         for x in os.listdir(project_path):
             if file_id in x and "MSK" in x and msk_id in x:
@@ -136,8 +223,8 @@ class DIYController(BaseController):
         msk_path = os.path.join(project_path, filename)
         msk = cv2.imread(msk_path, cv2.IMREAD_GRAYSCALE)
         
-        
         return msk
+    
     
     def change_texture(self, project_id, file_id, editor, img, msk, texture_img):
         texture_path, _ = save_temp(texture_img, project_id, self.app_settings.UPLOAD_FILES_PATH)
@@ -158,5 +245,42 @@ class DIYController(BaseController):
         
         return output_img
         
-    
-    
+        
+        
+    def open_project(self, project_id: str, project_data: dict):
+        project_path = os.path.join(self.upload_path, project_id)
+        os.makedirs(project_path, exist_ok=True)
+
+        for key, files in project_data.items():
+            if key.startswith("files"):
+                index = key.replace("files", "")   # get the number part
+                file_id_key = f"file{index}_id"
+
+                # get the file_id value from the corresponding key
+                file_id = project_data.get(file_id_key, key)
+
+                # Save main image
+                image_b64 = files.get("Image")
+                if image_b64:
+                    image_path = os.path.join(project_path, f"{file_id}-IMG-ORG.png")
+                    with open(image_path, "wb") as f:
+                        f.write(base64.b64decode(image_b64))
+
+                # Save masks
+                masks = files.get("Masks", {})
+                for label, mask_b64 in masks.items():
+                    mask_path = os.path.join(project_path, f"{file_id}-MSK:{label}.png")
+                    with open(mask_path, "wb") as f:
+                        f.write(base64.b64decode(mask_b64))
+
+                # Save depth image
+                depth_b64 = files.get("Depth")
+                if depth_b64:
+                    depth_path = os.path.join(project_path, f"{file_id}-DPTH.png")
+                    with open(depth_path, "wb") as f:
+                        f.write(base64.b64decode(depth_b64))
+
+        return True
+
+        
+        

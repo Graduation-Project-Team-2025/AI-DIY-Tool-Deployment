@@ -177,7 +177,6 @@ class RoomEditor(BaseModel):
     
 
     def preview_segmentation(self, image_pil, project_id: str,file_id: str):
-        
         masks, segmenation = self.get_segmentation_masks(image_pil)
         seg_vis = self.create_seg_vis(segmenation)
         
@@ -211,7 +210,7 @@ class RoomEditor(BaseModel):
         seg_vis_path = os.path.join(project_dir, seg_vis_filename)
         seg_vis.save(seg_vis_path)
         
-        return seg_vis_path, seg_paths, seg_colors
+        return seg_vis_filename, seg_colors
 
     def process(self, image_pil, color_wall=None, color_ceiling=None, floor_texture=None):
         if self.custom_masks is not None:
