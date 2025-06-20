@@ -5,6 +5,7 @@ from helpers import get_settings, Settings
 from models import RoomEditor
 from controllers import DIYController
 from pydantic import BaseModel
+from typing import List
 
 
 diy_router = APIRouter(
@@ -89,65 +90,55 @@ async def segment_image( request: Request, project_id: str):
         
    
 
+class SegmentColorPair(BaseModel):
+    segment_id: str
+    color: List[int]
+
 class SegmentRequest(BaseModel):
     file_id: str
-    segment_id: str
-    color: list[int]
-    
+    segments: List[SegmentColorPair]
+
 @diy_router.post('/{project_id}/change-color')
-async def chage_segment_color(
+async def change_segment_colors(
     request: Request,
     data: SegmentRequest,
     project_id: str
 ):
-    data = await request.json()
-        
-    if "file_id" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"Error": "File ID is required"}
-        )
-        
-    if "segment_id" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"Error": "Segment ID is required"}
-        )
-        
-    if "color" not in data:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"Error": "Color is required"}
-        )
-        
     diy_controller = DIYController()
-    valid, signal_eng, signal_ar = diy_controller.validate_project_id(project_id)
+
+    valid, signal_eng, _ = diy_controller.validate_project_id(project_id)
     if not valid:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "Error": signal_eng
-            }
+            content={"Error": signal_eng}
         )
-    valid, signal_eng, signal_ar = diy_controller.validate_file_id(data["file_id"], project_id)
+
+    valid, signal_eng, _ = diy_controller.validate_file_id(data.file_id, project_id)
     if not valid:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "Error": signal_eng
-            }
+            content={"Error": signal_eng}
         )
-    
-    img = diy_controller.read_img(project_id, data["file_id"])
-    msk = diy_controller.read_msk(project_id, data['file_id'], data['segment_id'])
-    
+
+    if not data.segments:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"Error": "At least one segment-color pair is required"}
+        )
+
+    img = diy_controller.read_img(project_id, data.file_id)
     editor = RoomEditor()
 
-    output_img = editor.change_color(img, msk, data["color"])
-    output_img_name, _ = diy_controller.cache_version(output_img, project_id, data["file_id"])
+    for item in data.segments:
+        msk = diy_controller.read_msk(project_id, data.file_id, item.segment_id)
+        img = editor.change_color(img, msk, item.color)  
+
+    output_img_name, _ = diy_controller.cache_version(img, project_id, data.file_id)
     base_url = str(request.base_url)
     url = base_url + f"image/{project_id}/{output_img_name}"
+
     return {"Image": url}
+
 
 
 @diy_router.post('/{project_id}/change-texture')
