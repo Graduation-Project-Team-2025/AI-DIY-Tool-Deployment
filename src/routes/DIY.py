@@ -69,7 +69,7 @@ async def segment_image( request: Request, project_id: str):
         )
         
     editor = RoomEditor()
-    img = diy_controller.read_img(project_id, data["file_id"])
+    img, img_filename = diy_controller.read_img(project_id, data["file_id"])
     preview_img_filename, seg_colors = editor.preview_segmentation(img, project_id, data["file_id"])
     
     if preview_img_filename is None:
@@ -81,9 +81,11 @@ async def segment_image( request: Request, project_id: str):
         )
         
     base_url = str(request.base_url)
-    url = base_url + f"image/{project_id}/{preview_img_filename}"
+    preview_url = base_url + f"image/{project_id}/{preview_img_filename}"
+    image_url = base_url + f"image/{project_id}/{img_filename}"
     return {
-        "preview_segments_img_url": url,
+        "preview_segments_img_url": preview_url,
+        "image_url": image_url,
         "segments_ids": list(seg_colors.keys()),
         "segments_colors": list(seg_colors.values())
         }
@@ -126,7 +128,7 @@ async def change_segment_colors(
             content={"Error": "At least one segment-color pair is required"}
         )
 
-    img = diy_controller.read_img(project_id, data.file_id)
+    img, _ = diy_controller.read_img(project_id, data.file_id)
     editor = RoomEditor()
 
     for item in data.segments:
@@ -166,7 +168,7 @@ async def change_segment_texture(
                 "Error": signal_eng
             }
         )
-    img = diy_controller.read_img(project_id, file_id)
+    img, _ = diy_controller.read_img(project_id, file_id)
     msk = diy_controller.read_msk(project_id, file_id, segment_id)
     
     editor = RoomEditor()

@@ -196,21 +196,22 @@ class DIYController(BaseController):
                 versioned_files.append(filename)
             elif "ORG" in filename:
                 org_file = filename
-        
+        filename = None
         if versioned_files:
             def extract_ver_num(f):
                 ver_part = f.split("VER")[-1].split(".")[0]  
                 return int(ver_part) if ver_part.isdigit() else -1
             
             latest_file = max(versioned_files, key=extract_ver_num)
-            img_path = os.path.join(project_path, latest_file)
+            filename = latest_file
         elif org_file:
-            img_path = os.path.join(project_path, org_file)
+            filename = org_file
         else:
             raise FileNotFoundError(f"No valid image found (missing ORG/VER): {file_id}")
         
+        img_path = os.path.join(project_path, filename)
         image = Image.open(img_path).convert("RGB")
-        return image
+        return image, filename
     
     
     def read_msk(self, project_id: str, file_id: str, msk_id: str):
